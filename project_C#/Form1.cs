@@ -24,6 +24,16 @@ namespace Monitor
     STATE_GET_PAYLOAD_DATA,
   }
 
+  public enum USB_Type_T
+  {
+    USB_TYPE_CHECK_CONNECTION,
+    USB_TYPE_ESTABLISH_TCP_CONNECTION,
+    USB_TYPE_SEND_DATA_TO_TCP_SERVER,
+    USB_TYPE_REC_DATA_FROM_TCP_SERVER,
+    USB_TYPE_CLOSE_TCP_CONNECTION,
+    USB_TYPE_MAX
+  }
+
 
   public struct USB_Packet_T
   {
@@ -42,7 +52,29 @@ namespace Monitor
       this.Payload_Size = Payload_Size;
       this.Payload_Data = Payload_Data;
     }
-  } 
+  }
+
+  public enum USB_Evt_Type_T
+  {
+    USB_EVT_TYPE_CHECK_STATUS_CONNECTION,
+    USB_EVT_TYPE_ESTABLISH_TCP_CONNECTION,
+    USB_EVT_TYPE_SEND_DATA_TO_TCP_SERVER,
+    USB_EVT_TYPE_REC_DATA_FROM_TCP_SERVER,
+    USB_EVT_TYPE_CLOSE_TCP_CONNECTION,
+    USB_EVT_TYPE_MAX
+  }
+
+  public struct USB_Evt_T
+  {
+    public USB_Evt_Type_T Type;
+    public char[]         Data;
+
+    public USB_Evt_T(USB_Evt_Type_T Type, char[] Data)
+    {
+      this.Type = Type;
+      this.Data = Data;
+    }
+  }
 
   public partial class Form1 : Form
   {
@@ -52,18 +84,29 @@ namespace Monitor
     // Circular buffer
     static CircularBuffer<char> cBuffer;
 
+    static CircularBuffer<USB_Evt_T> cBuffer_Process_Data;
+
     // Thread
     Thread mThread;
+
+    Thread threadProcess_Data;
     
     public Form1()
     {
       InitializeComponent();
 
       serialPort.DataReceived += new SerialDataReceivedEventHandler(Data_Receive);
-      cBuffer = new CircularBuffer<char>(1000, false);
+      cBuffer                  = new CircularBuffer<char>(1000, false);
+      cBuffer_Process_Data     = new CircularBuffer<USB_Evt_T>(50, false);
+
+
 
       // Create thread
-      mThread = new Thread(USB_Process_Data);
+      mThread            = new Thread(USB_Receive_Data);
+
+      threadProcess_Data = new Thread(USB_Process_Data);
+
+
 
       // Start thread
       mThread.Start();
@@ -77,7 +120,7 @@ namespace Monitor
       //comBox.Items.AddRange(COM);
     }
 
-    public static void USB_Process_Data()
+    public static void USB_Receive_Data()
     {
       USB_State_T usbState = USB_State_T.STATE_GET_HEADER;
       USB_Packet_T usbPacket = new USB_Packet_T(0, 0, 0, 0, new char[1000]);
@@ -157,6 +200,39 @@ namespace Monitor
               if (cBuffer.Size >= usbPacket.Payload_Size)
               {
                 // usbPacket.Payload_Data = Array.ConvertAll(cBuffer.Get((int)usbPacket.Payload_Size), char.Parse);
+                switch(usbPacket.Type)
+                {
+                  case 0x00:
+                    USB_Update_To_Evt(USB_Evt_Type_T.USB_EVT_TYPE_CHECK_STATUS_CONNECTION, 
+                                      usbPacket.Payload_Data, 
+                                      usbPacket.Payload_Size);
+                  break;
+
+                  case 0x01:
+                    USB_Update_To_Evt(USB_Evt_Type_T.USB_EVT_TYPE_ESTABLISH_TCP_CONNECTION, 
+                                      usbPacket.Payload_Data, 
+                                      usbPacket.Payload_Size);
+                  break;
+
+                  case 0x02:
+                    USB_Update_To_Evt(USB_Evt_Type_T.USB_EVT_TYPE_SEND_DATA_TO_TCP_SERVER, 
+                                      usbPacket.Payload_Data, 
+                                      usbPacket.Payload_Size);
+                  break;
+                  
+                  case 0x03:
+                    USB_Update_To_Evt(USB_Evt_Type_T.USB_EVT_TYPE_REC_DATA_FROM_TCP_SERVER, 
+                                      usbPacket.Payload_Data, 
+                                      usbPacket.Payload_Size);
+                  break;
+
+                  case 0x04:
+                    USB_Update_To_Evt(USB_Evt_Type_T.USB_EVT_TYPE_CLOSE_TCP_CONNECTION, 
+                                      usbPacket.Payload_Data, 
+                                      usbPacket.Payload_Size);
+                  break;
+                  default:break;
+                }
                 
                 // Clear packet data
                 usbPacket.Header = 0;
@@ -176,6 +252,57 @@ namespace Monitor
       }
     }
 
+    public static void USB_Update_To_Evt(USB_Evt_Type_T Type, char[] Data, uint Len)
+    {
+      USB_Evt_T tEvt = new USB_Evt_T(0, new char[1000]);
+      tEvt.Type = Type;
+      Array.Copy(Data, tEvt.Data, Len);
+
+      cBuffer_Process_Data.Put(tEvt);
+    }
+
+    public static void USB_Process_Data()
+    {
+      for (; ; )
+      {
+        if (!cBuffer_Process_Data.IsEmpty)
+        {
+          USB_Evt_T tUSB = new USB_Evt_T(0, new char[1000]);
+
+          tUSB = cBuffer_Process_Data.Get();
+
+            
+
+          // switch (tUSB.Type)
+          // {
+          //   case USB_Evt_Type_T.USB_EVT_TYPE_CHECK_STATUS_CONNECTION:
+          //   break;
+          //   default:break;
+          // }
+
+
+                    // switch (tUSB.Type)
+                    // {
+                    //   case USB_Evt_Type_T.USB_EVT_TYPE_CHECK_STATUS_CONNECTION:
+                    //       //Console.WriteLine("USB_EVT_TYPE_CHECK_STATUS_CONNECTION");
+                    //       break;
+                    //   case USB_Evt_Type_T.USB_EVT_TYPE_ESTABLISH_TCP_CONNECTION:
+                    //       //Console.WriteLine("USB_EVT_TYPE_ESTABLISH_TCP_CONNECTION");
+                    //       break;
+                    //   case USB_Evt_Type_T.USB_EVT_TYPE_SEND_DATA_TO_TCP_SERVER:
+                    //       //Console.WriteLine("USB_EVT_TYPE_SEND_DATA_TO_TCP_SERVER");
+                    //       break;
+                    //   case USB_Evt_Type_T.USB_EVT_TYPE_REC_DATA_FROM_TCP_SERVER:
+                    //       //Console.WriteLine("USB_EVT_TYPE_REC_DATA_FROM_TCP_SERVER");
+                    //       break;
+                    //   case USB_Evt_Type_T.USB_EVT_TYPE_CLOSE_TCP_CONNECTION:
+                    //       //Console.WriteLine("USB_EVT_TYPE_CLOSE_TCP_CONNECTION");
+                    //       break;
+                    //   default: break;
+                    // }
+        }
+      }
+    }
     private void Form1_Load(object sender, EventArgs e)
     {
         comBox.DataSource = SerialPort.GetPortNames();
