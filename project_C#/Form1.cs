@@ -76,6 +76,8 @@ namespace Monitor
     }
   }
 
+  
+
   public partial class Form1 : Form
   {
     string inputData = string.Empty;
@@ -86,11 +88,19 @@ namespace Monitor
 
     static CircularBuffer<USB_Evt_T> cBuffer_Process_Data;
 
-    // Thread
-    Thread mThread;
+    USB_State_T usbState = USB_State_T.STATE_GET_HEADER;
+    USB_Packet_T usbPacket = new USB_Packet_T(0, 0, 0, 0, new char[1000]);
 
-    Thread threadProcess_Data;
-    
+
+    public char[] tArr;
+    public string tChar;
+
+    public int countEvt = 0;
+    // Thread
+    //Thread mThread;
+
+    // Thread threadProcess_Data;
+
     public Form1()
     {
       InitializeComponent();
@@ -99,17 +109,21 @@ namespace Monitor
       cBuffer                  = new CircularBuffer<char>(1000, false);
       cBuffer_Process_Data     = new CircularBuffer<USB_Evt_T>(50, false);
 
+      // Init thread receive data
+      threadRecData = new BackgroundWorker();
+      threadRecData.WorkerReportsProgress = true;
+      threadRecData.WorkerSupportsCancellation = true;
 
+      threadRecData.DoWork += threadRecData_DoWork;
+      threadRecData.RunWorkerCompleted += threadRecData_RunWorkerCompleted;
 
-      // Create thread
-      mThread            = new Thread(USB_Receive_Data);
+      // Init thread process data
+      threadProcData = new BackgroundWorker();
+      threadProcData.WorkerReportsProgress = true;
+      threadProcData.WorkerSupportsCancellation = true;
 
-      threadProcess_Data = new Thread(USB_Process_Data);
-
-
-
-      // Start thread
-      mThread.Start();
+      threadProcData.DoWork += threadProcData_DoWork;
+      //threadProcData.RunWorkerCompleted += threadProcData_RunWorkerCompleted;
 
       string[] baudRate = { "1200", "2400", "4800", "9600", "19200", "38400", "57600", "115200" };
 
@@ -120,13 +134,9 @@ namespace Monitor
       //comBox.Items.AddRange(COM);
     }
 
-    public static void USB_Receive_Data()
+    private void threadRecData_DoWork(object sender, DoWorkEventArgs e)
     {
-      USB_State_T usbState = USB_State_T.STATE_GET_HEADER;
-      USB_Packet_T usbPacket = new USB_Packet_T(0, 0, 0, 0, new char[1000]);
-      for ( ; ; )
-      {
-        if (!cBuffer.IsEmpty)
+      while (!cBuffer.IsEmpty)
         {
           switch (usbState)
           {
@@ -181,7 +191,7 @@ namespace Monitor
                 //usbPacket.Payload_Size = (t_Data[0] << 8) | t_Data[1];
                 char[] t_Data = cBuffer.Get(2);
 
-                usbPacket.Payload_Size =  (uint)((t_Data[0] - '0') << 8) | t_Data[1];
+                usbPacket.Payload_Size =  (uint)((t_Data[0] << 8) | t_Data[1]);
 
                 if (usbPacket.Payload_Size <= 1000)
                 {
@@ -196,41 +206,50 @@ namespace Monitor
               break;
             case USB_State_T.STATE_GET_PAYLOAD_DATA:
 
-              usbPacket.Payload_Data = cBuffer.Get((int)usbPacket.Payload_Size);
+              
               if (cBuffer.Size >= usbPacket.Payload_Size)
               {
+                tArr = new char[8];
+                tChar = "OK";
+                usbPacket.Payload_Data = cBuffer.Get((int)usbPacket.Payload_Size);
                 // usbPacket.Payload_Data = Array.ConvertAll(cBuffer.Get((int)usbPacket.Payload_Size), char.Parse);
-                switch(usbPacket.Type)
+                switch(usbPacket.Cmd)
                 {
                   case 0x00:
                     USB_Update_To_Evt(USB_Evt_Type_T.USB_EVT_TYPE_CHECK_STATUS_CONNECTION, 
                                       usbPacket.Payload_Data, 
                                       usbPacket.Payload_Size);
+                   
                   break;
 
                   case 0x01:
                     USB_Update_To_Evt(USB_Evt_Type_T.USB_EVT_TYPE_ESTABLISH_TCP_CONNECTION, 
                                       usbPacket.Payload_Data, 
                                       usbPacket.Payload_Size);
+                    
                   break;
 
                   case 0x02:
                     USB_Update_To_Evt(USB_Evt_Type_T.USB_EVT_TYPE_SEND_DATA_TO_TCP_SERVER, 
                                       usbPacket.Payload_Data, 
                                       usbPacket.Payload_Size);
+
                   break;
                   
                   case 0x03:
                     USB_Update_To_Evt(USB_Evt_Type_T.USB_EVT_TYPE_REC_DATA_FROM_TCP_SERVER, 
                                       usbPacket.Payload_Data, 
                                       usbPacket.Payload_Size);
+                    
                   break;
 
                   case 0x04:
                     USB_Update_To_Evt(USB_Evt_Type_T.USB_EVT_TYPE_CLOSE_TCP_CONNECTION, 
                                       usbPacket.Payload_Data, 
                                       usbPacket.Payload_Size);
+
                   break;
+                
                   default:break;
                 }
                 
@@ -249,60 +268,96 @@ namespace Monitor
                 break;
           }
         }
+    }
+    private void threadRecData_RunWorkerCompleted(object sender, RunWorkerCompletedEventArgs e)
+    {
+      countEvt++;
+      Set_Text(countEvt.ToString());
+    }
+
+    private void threadProcData_DoWork(object sender, DoWorkEventArgs e)
+    { 
+      while (!cBuffer_Process_Data.IsEmpty)
+      {
+        USB_Evt_T tUSB = new USB_Evt_T(0, new char[1000]);
+        tUSB = cBuffer_Process_Data.Get();
+        switch (tUSB.Type)
+        {
+          case USB_Evt_Type_T.USB_EVT_TYPE_CHECK_STATUS_CONNECTION:
+
+            tArr[0] = (char)0x55;
+            tArr[1] = (char)0x01;
+            tArr[2] = (char)tUSB.Type;
+            tArr[3] = (char)0x03;
+            tArr[4] = (char)0x04;
+            Array.Copy(tUSB.Data, 0, tArr, 5, 3);
+
+            serialPort.Write(tArr, 0, 8);
+              //Console.WriteLine("USB_EVT_TYPE_CHECK_STATUS_CONNECTION");
+            break;
+          case USB_Evt_Type_T.USB_EVT_TYPE_ESTABLISH_TCP_CONNECTION:
+            tArr[0] = (char)0x55;
+            tArr[1] = (char)0x01;
+            tArr[2] = (char)tUSB.Type;
+            tArr[3] = (char)0x03;
+            tArr[4] = (char)0x04;
+            Array.Copy(tUSB.Data, 0, tArr, 5, 3);
+
+            serialPort.Write(tArr, 0, 8);
+              //Console.WriteLine("USB_EVT_TYPE_ESTABLISH_TCP_CONNECTION");
+              break;
+          case USB_Evt_Type_T.USB_EVT_TYPE_SEND_DATA_TO_TCP_SERVER:
+            tArr[0] = (char)0x55;
+            tArr[1] = (char)0x01;
+            tArr[2] = (char)tUSB.Type;
+            tArr[3] = (char)0x03;
+            tArr[4] = (char)0x04;
+            Array.Copy(tUSB.Data, 0, tArr, 5, 3);
+
+            serialPort.Write(tArr, 0, 8);
+              //Console.WriteLine("USB_EVT_TYPE_SEND_DATA_TO_TCP_SERVER");
+              break;
+          case USB_Evt_Type_T.USB_EVT_TYPE_REC_DATA_FROM_TCP_SERVER:
+            tArr[0] = (char)0x55;
+            tArr[1] = (char)0x01;
+            tArr[2] = (char)tUSB.Type;
+            tArr[3] = (char)0x03;
+            tArr[4] = (char)0x04;
+            Array.Copy(tUSB.Data, 0, tArr, 5, 3);
+
+            serialPort.Write(tArr, 0, 8);
+              //Console.WriteLine("USB_EVT_TYPE_REC_DATA_FROM_TCP_SERVER");
+              break;
+          case USB_Evt_Type_T.USB_EVT_TYPE_CLOSE_TCP_CONNECTION:
+            tArr[0] = (char)0x55;
+            tArr[1] = (char)0x01;
+            tArr[2] = (char)tUSB.Type;
+            tArr[3] = (char)0x03;
+            tArr[4] = (char)0x04;
+            Array.Copy(tUSB.Data, 0, tArr, 5, 3);
+
+            serialPort.Write(tArr, 0, 8);
+              //Console.WriteLine("USB_EVT_TYPE_CLOSE_TCP_CONNECTION");
+              break;
+          default: break;
+        }
       }
     }
 
-    public static void USB_Update_To_Evt(USB_Evt_Type_T Type, char[] Data, uint Len)
+    private void USB_Update_To_Evt(USB_Evt_Type_T Type, char[] Data, uint Len)
     {
       USB_Evt_T tEvt = new USB_Evt_T(0, new char[1000]);
       tEvt.Type = Type;
       Array.Copy(Data, tEvt.Data, Len);
 
       cBuffer_Process_Data.Put(tEvt);
-    }
 
-    public static void USB_Process_Data()
-    {
-      for (; ; )
+      if (!threadProcData.IsBusy)
       {
-        if (!cBuffer_Process_Data.IsEmpty)
-        {
-          USB_Evt_T tUSB = new USB_Evt_T(0, new char[1000]);
-
-          tUSB = cBuffer_Process_Data.Get();
-
-            
-
-          // switch (tUSB.Type)
-          // {
-          //   case USB_Evt_Type_T.USB_EVT_TYPE_CHECK_STATUS_CONNECTION:
-          //   break;
-          //   default:break;
-          // }
-
-
-                    // switch (tUSB.Type)
-                    // {
-                    //   case USB_Evt_Type_T.USB_EVT_TYPE_CHECK_STATUS_CONNECTION:
-                    //       //Console.WriteLine("USB_EVT_TYPE_CHECK_STATUS_CONNECTION");
-                    //       break;
-                    //   case USB_Evt_Type_T.USB_EVT_TYPE_ESTABLISH_TCP_CONNECTION:
-                    //       //Console.WriteLine("USB_EVT_TYPE_ESTABLISH_TCP_CONNECTION");
-                    //       break;
-                    //   case USB_Evt_Type_T.USB_EVT_TYPE_SEND_DATA_TO_TCP_SERVER:
-                    //       //Console.WriteLine("USB_EVT_TYPE_SEND_DATA_TO_TCP_SERVER");
-                    //       break;
-                    //   case USB_Evt_Type_T.USB_EVT_TYPE_REC_DATA_FROM_TCP_SERVER:
-                    //       //Console.WriteLine("USB_EVT_TYPE_REC_DATA_FROM_TCP_SERVER");
-                    //       break;
-                    //   case USB_Evt_Type_T.USB_EVT_TYPE_CLOSE_TCP_CONNECTION:
-                    //       //Console.WriteLine("USB_EVT_TYPE_CLOSE_TCP_CONNECTION");
-                    //       break;
-                    //   default: break;
-                    // }
-        }
+        threadProcData.RunWorkerAsync();
       }
     }
+
     private void Form1_Load(object sender, EventArgs e)
     {
         comBox.DataSource = SerialPort.GetPortNames();
@@ -331,53 +386,55 @@ namespace Monitor
 
     private void Data_Receive(object obj, SerialDataReceivedEventArgs e)
     {
-        inputData = serialPort.ReadExisting();
+      inputData = serialPort.ReadExisting();
         
-        // Write to circular buffer
-        cBuffer.Put(inputData.ToCharArray());
+      // Write to circular buffer
+      cBuffer.Put(inputData.ToCharArray());
 
-        int tLen = cBuffer.Size;
+      int tLen = cBuffer.Size;
+      if (!threadRecData.IsBusy)
+      {
+        threadRecData.RunWorkerAsync();
+      }
+        
 
-        //temp = serialPort.ReadByte();
-        if (inputData != String.Empty)
-        {
-            // 
-            // Test data
-            Set_Text(inputData);
+      // if (inputData != String.Empty)
+      // {
+      //     // 
+      //     // Test data
+      //     Set_Text(inputData);
 
-        }
+      // }
     }
 
     private void Set_Text(string text)
     {
-        if (this.viewBox.InvokeRequired)
-        {
-            Set_Text_CB d = new Set_Text_CB(Set_Text);
+      if (this.viewBox.InvokeRequired)
+      {
+        Set_Text_CB d = new Set_Text_CB(Set_Text);
 
-            this.Invoke(d, new object[] { text });
-        }
-        else
-        {
-            this.viewBox.Text += text;
-        }
+        this.Invoke(d, new object[] { text });
+      }
+      else
+      {
+        viewBox.Text += text;
+      }
     }
 
     private void Timer_Tick(object sender, EventArgs e)
     {
         
-        //comBox.DataSource = SerialPort.GetPortNames();
-        if (!serialPort.IsOpen)
-        {
-            viewStatusLabel.Text = ("Disconnected");
-            viewStatusLabel.ForeColor = Color.Red;
-        }
-        else
-        {
-            viewStatusLabel.Text = ("Connected");
-            viewStatusLabel.ForeColor = Color.Green;
-        }
+      //comBox.DataSource = SerialPort.GetPortNames();
+      if (!serialPort.IsOpen)
+      {
+          viewStatusLabel.Text = ("Disconnected");
+          viewStatusLabel.ForeColor = Color.Red;
+      }
+      else
+      {
+          viewStatusLabel.Text = ("Connected");
+          viewStatusLabel.ForeColor = Color.Green;
+      }
     }
-
-    
   }
 }
