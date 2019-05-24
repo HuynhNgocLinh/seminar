@@ -76,7 +76,7 @@ typedef struct
 {
   SUSB_Evt_Type_T Type; /*!<Type of Evt */
   SUSB_Evt_Data_T Data; /*!<Type of Info depend on Type*/
-} SLed_Evt_T;
+} SUSB_Evt_T;
 /*******************************************************************************
  *  CMD TYPEDEFS
  ******************************************************************************/

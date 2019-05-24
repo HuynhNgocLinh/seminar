@@ -22,7 +22,7 @@
 #include "main.h"
 #include "usb_device.h"
 #include "usbd_cdc_if.h"
-#include "inet.h"
+//#include "inet.h"
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
@@ -48,7 +48,7 @@
 
 /* USER CODE BEGIN PV */
 uint8_t rec_data[64];
-inet_info_connection_t m_info_connection;
+//inet_info_connection_t m_info_connection;
 
 /* USER CODE END PV */
 
@@ -118,34 +118,34 @@ int main(void)
 	//inet_get_info_connection(&m_info_connection);
 	
 	
-  MX_USB_DEVICE_Init();
+  //MX_USB_DEVICE_Init();
 	
 //	Packet_T packet; 
 //		packet.Header = 0x55,
 //		packet.Type   = 0x01,
 //		memset(packet.Len, 0x01, 2);
 //		memcpy(packet.Data, arr, sizeof(arr));
-packet[IDX_HEADER] = 0x55;
-packet[IDX_TYPE] = 0x01;
-packet[IDX_CMD]   = 0x00;
-packet[IDX_LEN] = 0x00;
-packet[IDX_LEN + 1] = 0x03; 
-memcpy(&packet[IDX_DATA], arr, 3);
+//packet[IDX_HEADER] = 0x55;
+//packet[IDX_TYPE] = 0x01;
+//packet[IDX_CMD]   = 0x00;
+//packet[IDX_LEN] = 0x00;
+//packet[IDX_LEN + 1] = 0x03; 
+//memcpy(&packet[IDX_DATA], arr, 3);
 
-	HAL_Delay(10000);
-	CDC_Transmit_FS(packet, 8);
-	HAL_Delay(1);
-	packet[IDX_CMD]   = 0x01;
-	CDC_Transmit_FS(packet, 8);
-	HAL_Delay(1);
-	packet[IDX_CMD]   = 0x02;
-	CDC_Transmit_FS(packet, 8);
-	HAL_Delay(1);
-	packet[IDX_CMD]   = 0x03;
-	CDC_Transmit_FS(packet, 8);
-	HAL_Delay(1);
-	packet[IDX_CMD]   = 0x04;
-	CDC_Transmit_FS(packet, 8);
+//	HAL_Delay(10000);
+//	CDC_Transmit_FS(packet, 8);
+//	HAL_Delay(1);
+//	packet[IDX_CMD]   = 0x01;
+//	CDC_Transmit_FS(packet, 8);
+//	HAL_Delay(1);
+//	packet[IDX_CMD]   = 0x02;
+//	CDC_Transmit_FS(packet, 8);
+//	HAL_Delay(1);
+//	packet[IDX_CMD]   = 0x03;
+//	CDC_Transmit_FS(packet, 8);
+//	HAL_Delay(1);
+//	packet[IDX_CMD]   = 0x04;
+//	CDC_Transmit_FS(packet, 8);
 	
 	
 	

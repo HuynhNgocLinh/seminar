@@ -1,4 +1,10 @@
 --cpu=Cortex-M4.fp
+"usb_cdc\fiot_hal_timer.o"
+"usb_cdc\cbuffer.o"
+"usb_cdc\dbuffer.o"
+"usb_cdc\fos.o"
+"usb_cdc\sys_data_manager.o"
+"usb_cdc\sys_usb.o"
 "usb_cdc\startup_stm32f407xx.o"
 "usb_cdc\main.o"
 "usb_cdc\usb_device.o"
@@ -30,8 +36,6 @@
 "usb_cdc\usbd_ctlreq.o"
 "usb_cdc\usbd_ioreq.o"
 "usb_cdc\usbd_cdc.o"
-"usb_cdc\inet.o"
-"usb_cdc\cbuffer.o"
 --library_type=microlib --strict --scatter "USB_CDC\USB_CDC.sct"
 --summary_stderr --info summarysizes --map --load_addr_map_info --xref --callgraph --symbols
 --info sizes --info totals --info unused --info veneers

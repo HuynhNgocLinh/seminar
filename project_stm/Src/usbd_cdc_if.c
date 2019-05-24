@@ -101,6 +101,8 @@ uint8_t UserTxBufferFS[APP_TX_DATA_SIZE];
 
 /* USER CODE BEGIN PRIVATE_VARIABLES */
 
+CDC_Callback_T CDC_Callback_Fxn;
+
 /* USER CODE END PRIVATE_VARIABLES */
 
 /**
@@ -264,6 +266,7 @@ static int8_t CDC_Control_FS(uint8_t cmd, uint8_t* pbuf, uint16_t length)
 static int8_t CDC_Receive_FS(uint8_t* Buf, uint32_t *Len)
 {
   /* USER CODE BEGIN 6 */
+  CDC_Callback_Fxn(Buf, (int)*Len);
 	memcpy(&rec_data[idx], Buf, (int)*Len);
 	idx += *Len;
 	
@@ -275,6 +278,11 @@ static int8_t CDC_Receive_FS(uint8_t* Buf, uint32_t *Len)
   USBD_CDC_ReceivePacket(&hUsbDeviceFS);
   return (USBD_OK);
   /* USER CODE END 6 */
+}
+
+void CDC_Set_Callback_Fxn(CDC_Callback_T Callback_Fxn)
+{
+  CDC_Callback_Fxn = Callback_Fxn;
 }
 
 /**

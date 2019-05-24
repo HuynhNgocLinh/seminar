@@ -105,6 +105,10 @@ extern USBD_CDC_ItfTypeDef USBD_Interface_fops_FS;
 
 uint8_t CDC_Transmit_FS(uint8_t* Buf, uint16_t Len);
 
+typedef void (*CDC_Callback_T)(uint8_t* Buf, uint32_t Len);
+
+void CDC_Set_Callback_Fxn(CDC_Callback_T Callback_Fxn);
+
 /* USER CODE BEGIN EXPORTED_FUNCTIONS */
 
 /* USER CODE END EXPORTED_FUNCTIONS */

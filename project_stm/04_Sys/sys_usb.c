@@ -112,9 +112,9 @@ void SUSB_Cmd_Loop(void);
 /*******************************************************************************
  * FUNCTIONS - CALLBACK
  ******************************************************************************/
-void SUSB_Receive_CallbackFxn(uint8_t* Buf, uint32_t Len)
+void SUSB_Callback_Fxn(uint8_t* Buf, uint32_t Len)
 {
-  CBuffer_Write(&cBuffer, buf, len);
+  CBuffer_Write(&cBuffer, Buf, Len);
 }
 /*******************************************************************************
  * FUNCTIONS - API
@@ -215,6 +215,8 @@ void SUSB_Setup_With_DM(void)
 void SUSB_Setup_With_USB(void)
 {
   MX_USB_DEVICE_Init();
+
+  CDC_Set_Callback_Fxn(SUSB_Callback_Fxn);
 }
 
 void SUSB_Setup_CBuffer(void)
@@ -253,7 +255,7 @@ void SUSB_Proc_Rec_Data(void)
       // Check type
       if (susbPacket.Type < SUSB_TYPE_MAX)
       {
-        susbState = SUSB_STATE_GET_PAYLOAD_SIZE
+        susbState = SUSB_STATE_GET_PAYLOAD_SIZE;
       }
       else 
       {
@@ -266,10 +268,10 @@ void SUSB_Proc_Rec_Data(void)
       uint8_t tData[2];
       CBuffer_Read(&cBuffer, tData, 2);
       susbPacket.Payload_Size = tData[0];
-      susbPacket.Payload_Size = (susbPacket.Payload_Size << 8) + tData[1]
+      susbPacket.Payload_Size = (susbPacket.Payload_Size << 8) + tData[1];
 
       // Check payload size
-      if (susbPacket.Len <= SUSB_PAYLOAD_MAX_SIZE)
+      if (susbPacket.Payload_Size <= SUSB_PAYLOAD_MAX_SIZE)
       {
         susbState = SUSB_STATE_GET_PAYLOAD_DATA;
       }
@@ -288,7 +290,7 @@ void SUSB_Proc_Rec_Data(void)
       CBuffer_Read(&cBuffer, &susbPacket.Payload_Data, susbPacket.Payload_Size);
 
       // Update Evt to sys_data_manager
-      SUSB_Evt_Type_T tEvt;
+      SUSB_Evt_T tEvt;
       tEvt.Type = (SUSB_Evt_Type_T)susbPacket.Type;
       memcpy(tEvt.Data.Data, susbPacket.Payload_Data, susbPacket.Payload_Size);
 

@@ -338,7 +338,7 @@
               <MiscControls></MiscControls>
               <Define>USE_HAL_DRIVER,STM32F407xx</Define>
               <Undefine></Undefine>
-              <IncludePath>../Inc;../Drivers/STM32F4xx_HAL_Driver/Inc;../Drivers/STM32F4xx_HAL_Driver/Inc/Legacy;../Middlewares/ST/STM32_USB_Device_Library/Core/Inc;../Middlewares/ST/STM32_USB_Device_Library/Class/CDC/Inc;../Drivers/CMSIS/Device/ST/STM32F4xx/Include;../Drivers/CMSIS/Include;..\Component\Inet;..\02_Middlewares</IncludePath>
+              <IncludePath>../Inc;../Drivers/STM32F4xx_HAL_Driver/Inc;../Drivers/STM32F4xx_HAL_Driver/Inc/Legacy;../Middlewares/ST/STM32_USB_Device_Library/Core/Inc;../Middlewares/ST/STM32_USB_Device_Library/Class/CDC/Inc;../Drivers/CMSIS/Device/ST/STM32F4xx/Include;../Drivers/CMSIS/Include;..\Component\Inet;..\01_Pre_HAL;..\02_Middlewares;..\03_OS;..\04_Sys</IncludePath>
             </VariousControls>
           </Cads>
           <Aads>
@@ -379,6 +379,91 @@
         </TargetArmAds>
       </TargetOption>
       <Groups>
+        <Group>
+          <GroupName>01_PreHAL</GroupName>
+          <Files>
+            <File>
+              <FileName>fiot_hal_define.h</FileName>
+              <FileType>5</FileType>
+              <FilePath>..\01_Pre_HAL\fiot_hal_define.h</FilePath>
+            </File>
+            <File>
+              <FileName>fiot_hal_timer.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\01_Pre_HAL\fiot_hal_timer.c</FilePath>
+            </File>
+            <File>
+              <FileName>fiot_hal_timer.h</FileName>
+              <FileType>5</FileType>
+              <FilePath>..\01_Pre_HAL\fiot_hal_timer.h</FilePath>
+            </File>
+          </Files>
+        </Group>
+        <Group>
+          <GroupName>02_Middlewares</GroupName>
+          <Files>
+            <File>
+              <FileName>cbuffer.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\02_Middlewares\cbuffer.c</FilePath>
+            </File>
+            <File>
+              <FileName>cbuffer.h</FileName>
+              <FileType>5</FileType>
+              <FilePath>..\02_Middlewares\cbuffer.h</FilePath>
+            </File>
+            <File>
+              <FileName>dbuffer.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\02_Middlewares\dbuffer.c</FilePath>
+            </File>
+            <File>
+              <FileName>dbuffer.h</FileName>
+              <FileType>5</FileType>
+              <FilePath>..\02_Middlewares\dbuffer.h</FilePath>
+            </File>
+          </Files>
+        </Group>
+        <Group>
+          <GroupName>03_OS</GroupName>
+          <Files>
+            <File>
+              <FileName>fos.h</FileName>
+              <FileType>5</FileType>
+              <FilePath>..\03_OS\fos.h</FilePath>
+            </File>
+            <File>
+              <FileName>fos.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\03_OS\fos.c</FilePath>
+            </File>
+          </Files>
+        </Group>
+        <Group>
+          <GroupName>04_Sys</GroupName>
+          <Files>
+            <File>
+              <FileName>sys_data_manager.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\04_Sys\sys_data_manager.c</FilePath>
+            </File>
+            <File>
+              <FileName>sys_data_manager.h</FileName>
+              <FileType>5</FileType>
+              <FilePath>..\04_Sys\sys_data_manager.h</FilePath>
+            </File>
+            <File>
+              <FileName>sys_usb.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\04_Sys\sys_usb.c</FilePath>
+            </File>
+            <File>
+              <FileName>sys_usb.h</FileName>
+              <FileType>5</FileType>
+              <FilePath>..\04_Sys\sys_usb.h</FilePath>
+            </File>
+          </Files>
+        </Group>
         <Group>
           <GroupName>Application/MDK-ARM</GroupName>
           <Files>
@@ -556,36 +641,6 @@
               <FileName>usbd_cdc.c</FileName>
               <FileType>1</FileType>
               <FilePath>../Middlewares/ST/STM32_USB_Device_Library/Class/CDC/Src/usbd_cdc.c</FilePath>
-            </File>
-          </Files>
-        </Group>
-        <Group>
-          <GroupName>Component</GroupName>
-          <Files>
-            <File>
-              <FileName>inet.c</FileName>
-              <FileType>1</FileType>
-              <FilePath>..\Component\Inet\inet.c</FilePath>
-            </File>
-            <File>
-              <FileName>inet.h</FileName>
-              <FileType>5</FileType>
-              <FilePath>..\Component\Inet\inet.h</FilePath>
-            </File>
-          </Files>
-        </Group>
-        <Group>
-          <GroupName>02_Middlewares</GroupName>
-          <Files>
-            <File>
-              <FileName>cbuffer.c</FileName>
-              <FileType>1</FileType>
-              <FilePath>..\02_Middlewares\cbuffer.c</FilePath>
-            </File>
-            <File>
-              <FileName>cbuffer.h</FileName>
-              <FileType>5</FileType>
-              <FilePath>..\02_Middlewares\cbuffer.h</FilePath>
             </File>
           </Files>
         </Group>
