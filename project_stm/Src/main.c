@@ -22,6 +22,9 @@
 #include "main.h"
 #include "usb_device.h"
 #include "usbd_cdc_if.h"
+//#include "sys_usb.h"
+#include "fos.h"
+#include "tcp.h"
 //#include "inet.h"
 
 /* Private includes ----------------------------------------------------------*/
@@ -89,6 +92,8 @@ enum
 	IDX_DATA   = 5
 };
 
+TCP_Data_T tData[20];
+TCP_Status_T mStatus;
 
 int main(void)
 {
@@ -114,6 +119,16 @@ int main(void)
 
   /* Initialize all configured peripherals */
   MX_GPIO_Init();
+	//FOS_Init();
+	TCP_Init();
+	HAL_Delay(10000);
+	mStatus = TCP_Establish_Connection("127.0.0.2", "9999");
+	mStatus = TCP_Send_Data("Linh", 4);
+	mStatus = TCP_Receive_Data(tData);
+	//FOS_Start();
+
+  
+	
 	//inet_init();
 	//inet_get_info_connection(&m_info_connection);
 	
@@ -125,27 +140,27 @@ int main(void)
 //		packet.Type   = 0x01,
 //		memset(packet.Len, 0x01, 2);
 //		memcpy(packet.Data, arr, sizeof(arr));
-//packet[IDX_HEADER] = 0x55;
-//packet[IDX_TYPE] = 0x01;
-//packet[IDX_CMD]   = 0x00;
-//packet[IDX_LEN] = 0x00;
-//packet[IDX_LEN + 1] = 0x03; 
-//memcpy(&packet[IDX_DATA], arr, 3);
+// packet[IDX_HEADER] = 0x55;
+// packet[IDX_TYPE] = 0x01;
+// packet[IDX_CMD]   = 0x00;
+// packet[IDX_LEN] = 0x00;
+// packet[IDX_LEN + 1] = 0x03; 
+// memcpy(&packet[IDX_DATA], arr, 3);
 
-//	HAL_Delay(10000);
-//	CDC_Transmit_FS(packet, 8);
-//	HAL_Delay(1);
-//	packet[IDX_CMD]   = 0x01;
-//	CDC_Transmit_FS(packet, 8);
-//	HAL_Delay(1);
-//	packet[IDX_CMD]   = 0x02;
-//	CDC_Transmit_FS(packet, 8);
-//	HAL_Delay(1);
-//	packet[IDX_CMD]   = 0x03;
-//	CDC_Transmit_FS(packet, 8);
-//	HAL_Delay(1);
-//	packet[IDX_CMD]   = 0x04;
-//	CDC_Transmit_FS(packet, 8);
+// 	HAL_Delay(10000);
+// 	CDC_Transmit_FS(packet, 8);
+// 	HAL_Delay(1);
+// 	packet[IDX_CMD]   = 0x01;
+// 	CDC_Transmit_FS(packet, 8);
+// 	HAL_Delay(1);
+// 	packet[IDX_CMD]   = 0x02;
+// 	CDC_Transmit_FS(packet, 8);
+// 	HAL_Delay(1);
+// 	packet[IDX_CMD]   = 0x03;
+// 	CDC_Transmit_FS(packet, 8);
+// 	HAL_Delay(1);
+// 	packet[IDX_CMD]   = 0x04;
+// 	CDC_Transmit_FS(packet, 8);
 	
 	
 	
@@ -160,7 +175,7 @@ int main(void)
   while (1)
   {
     /* USER CODE END WHILE */
-		
+		//FOS_Run();
 
     /* USER CODE BEGIN 3 */
 //		CDC_Transmit_FS((uint8_t *) "Hello world\n", sizeof("Hello world\n"));
