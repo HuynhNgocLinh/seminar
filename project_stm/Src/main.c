@@ -50,7 +50,7 @@
 /* Private variables ---------------------------------------------------------*/
 
 /* USER CODE BEGIN PV */
-uint8_t rec_data[64];
+char rec_data[64] = {0x00};
 //inet_info_connection_t m_info_connection;
 
 /* USER CODE END PV */
@@ -92,9 +92,8 @@ enum
 	IDX_DATA   = 5
 };
 
-TCP_Data_T tData[20];
+TCP_Data_T tData_Rec[20]= {0x00};
 TCP_Status_T mStatus;
-
 int main(void)
 {
   /* USER CODE BEGIN 1 */
@@ -120,11 +119,11 @@ int main(void)
   /* Initialize all configured peripherals */
   MX_GPIO_Init();
 	//FOS_Init();
-	TCP_Init();
-	HAL_Delay(10000);
-	mStatus = TCP_Establish_Connection("127.0.0.2", "9999");
+	mStatus = TCP_Init();
+	mStatus = TCP_Establish_Connection("127.0.0.2", 9999);
 	mStatus = TCP_Send_Data("Linh", 4);
-	mStatus = TCP_Receive_Data(tData);
+	mStatus = TCP_Receive_Data(rec_data);
+	mStatus = TCP_Close_Connection();
 	//FOS_Start();
 
   

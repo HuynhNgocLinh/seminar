@@ -17,6 +17,8 @@
 #include "fiot_hal_timer.h"
 #include "cbuffer.h"
 #include "usbd_cdc_if.h"
+#include "crc8.h"
+#include "parson.h"
 #include "usb_device.h"
 
 /********************************************************************************
@@ -32,9 +34,9 @@
 typedef enum 
 { 
   TCP_PKT_HEADER_IDX = 0       ,
-  TCP_PKT_TYPE_IDX             ,
   TCP_PKT_PAYLOAD_SIZE_IDX     ,
-  TCP_PKT_PAYLOAD_DATA_IDX = 4 
+  TCP_PKT_PAYLOAD_DATA_IDX = 3 ,
+  TCP_PKT_CRC_8_IDX            ,
 } TCP_Pkt_Idx_T;
 
 typedef enum 
@@ -46,14 +48,15 @@ typedef enum
 typedef enum 
 {
   TCP_STATE_GET_HEADER        ,
-  TCP_STATE_GET_TYPE          ,
   TCP_STATE_GET_PAYLOAD_SIZE  ,
   TCP_STATE_GET_PAYLOAD_DATA  ,
+  TCP_STATE_GET_CRC           ,
   TCP_STATE_MAX
 } TCP_State_T;
 
 typedef enum 
 {
+  TCP_TYPE_HANDSHAKE             ,
   TCP_TYPE_TCP_CHECK_CONNECTION  ,
   TCP_TYPE_TCP_ESTAB_CONNECTION  ,
   TCP_TYPE_TCP_SEND_DATA         ,
@@ -65,9 +68,9 @@ typedef enum
 typedef struct 
 {
   uint8_t        Header;
-  TCP_Type_T     Type;
   uint16_t       Payload_Size;
   uint8_t        Payload_Data[1000];
+  int            CRC_8;                  
 } TCP_Packet_T;
 
 typedef enum
@@ -97,7 +100,7 @@ static uint8_t cBuffer_Data[1000];
 TCP_State_T tcpState = TCP_STATE_GET_HEADER;
 TCP_Packet_T tcpPacket;
 
-TCP_Data_CB_T tcpData_CB[TCP_TYPE_MAX] = {TCP_DATA_CB_STATE_ERR};
+TCP_Data_CB_T tcpData_CB;
 /*******************************************************************************
  * FUNCTIONS - LOCAL
  ******************************************************************************/
@@ -136,21 +139,6 @@ void TCP_Timer_Callback(void)
       // Check header
       if (tcpPacket.Header == TCP_PKT_HEADER)
       {
-        tcpState = TCP_STATE_GET_TYPE;
-      }
-      else 
-      {
-        tcpState = TCP_STATE_GET_HEADER;
-      }
-    }
-    break;
-    case TCP_STATE_GET_TYPE:
-    {
-      CBuffer_Read(&cBuffer, &tcpPacket.Type, 1);
-
-      // Check type
-      if (tcpPacket.Type < TCP_TYPE_MAX)
-      {
         tcpState = TCP_STATE_GET_PAYLOAD_SIZE;
       }
       else 
@@ -184,25 +172,36 @@ void TCP_Timer_Callback(void)
         return;
 
       CBuffer_Read(&cBuffer, &tcpPacket.Payload_Data, tcpPacket.Payload_Size);
+      tcpState = TCP_STATE_GET_CRC;
 
-      // Update state
-      tcpData_CB[tcpPacket.Type].State = TCP_DATA_CB_STATE_READY;
-      memcpy(tcpData_CB[tcpPacket.Type].Data, tcpPacket.Payload_Data, tcpPacket.Payload_Size);
-      tcpData_CB[tcpPacket.Type].Len = tcpPacket.Payload_Size;
-
-      tcpState = TCP_STATE_GET_HEADER;
-      tcpPacket.Header = 0;
-      tcpPacket.Type = 0;
-      tcpPacket.Payload_Size = 0;
-      memset(tcpPacket.Payload_Data, 0x00, 1000);
-
-      if (tcpState_Timer != TCP_TIMER_STATE_DIS)
-      {
-        FIOT_HAL_Timer_Stop(&tcpTimer);
-        tcpState_Timer = TCP_TIMER_STATE_DIS;
-      }
+      
     }
     break;
+    case TCP_STATE_GET_CRC:
+    {
+      CBuffer_Read(&cBuffer, &tcpPacket.CRC_8, 1);
+
+			uint8_t tCRC = crc8(tcpPacket.Payload_Data, tcpPacket.Payload_Size);
+      if (tCRC == tcpPacket.CRC_8)
+      {
+        // Update state
+        tcpData_CB.State = TCP_DATA_CB_STATE_READY;
+        memcpy(tcpData_CB.Data, tcpPacket.Payload_Data, tcpPacket.Payload_Size);
+        tcpData_CB.Len = tcpPacket.Payload_Size;
+
+        if (tcpState_Timer != TCP_TIMER_STATE_DIS)
+        {
+          FIOT_HAL_Timer_Stop(&tcpTimer);
+          tcpState_Timer = TCP_TIMER_STATE_DIS;
+        }
+      }
+
+      tcpState = TCP_STATE_GET_HEADER;
+        tcpPacket.Header = 0;
+        tcpPacket.Payload_Size = 0;
+        memset(tcpPacket.Payload_Data, 0x00, 1000);
+        tcpPacket.CRC_8 = 0;
+    }
 		
 		default: break;
   }
@@ -211,7 +210,7 @@ void TCP_Timer_Callback(void)
 /********************************************************************************
  * FUNCTIONS - API
  ********************************************************************************/
-void TCP_Init(void)
+TCP_Status_T TCP_Init(void)
 {
   // tcpLINE_USB_Cmd = SUSB_SubscribeLINE(SUSB_LINE_CMD);
 
@@ -221,6 +220,28 @@ void TCP_Init(void)
   TCP_Init_CBuffer();
 
   TCP_Init_Timer();
+
+  for (uint32_t i = 0; i < 0xFFFFFFFF; i++)
+  {
+    if (tcpData_CB.State != TCP_DATA_CB_STATE_ERR)
+    {
+      // Change state callback packet
+      tcpData_CB.State = TCP_DATA_CB_STATE_ERR;
+
+      // Create json value
+      JSON_Value *smRoot_Value;
+      const char *tCommand = NULL;
+      // Parse to string
+      smRoot_Value = json_parse_string((char *)tcpData_CB.Data);
+      tCommand = json_object_get_string(json_object(smRoot_Value), "Data");
+      if(strcmp(tCommand, "USB_Handshake") == 0)
+        return TCP_STATUS_OK;
+      else
+        return TCP_STATUS_ERR;
+    }
+  }
+
+  return TCP_STATUS_ERR_TIMEOUT;
 }
 /*!
  *******************************************************************************
@@ -234,38 +255,69 @@ void TCP_Init(void)
  ********************************************************************************/
 TCP_Status_T TCP_Check_Connection_Status(TCP_Connection_Status_T *Status_Data)
 {
-  uint8_t tPacket[5];
+  // Create json value
+  JSON_Value* root_value = json_value_init_object();
+  JSON_Object* root_object = json_value_get_object(root_value);
 
-  uint8_t tLen = 1;
-  uint8_t rx_Buf[5];
+  json_object_set_string(root_object, "Cmd", "TCP_check_status_connection");
+  // Parse to string
+  char* tJson = NULL;
+  tJson = json_serialize_to_string_pretty(root_value);
+
+  uint16_t json_Len = strlen(tJson);
+  uint8_t tPacket[json_Len + 4];
 
   // Add header
   tPacket[TCP_PKT_HEADER_IDX]           = TCP_PKT_HEADER;
-  // Add type
-  tPacket[TCP_PKT_TYPE_IDX]             = TCP_TYPE_TCP_CHECK_CONNECTION;
   // Add Payload Size
-  tPacket[TCP_PKT_PAYLOAD_SIZE_IDX]     = (tLen >> 8) & 0xFF;
-  tPacket[TCP_PKT_PAYLOAD_SIZE_IDX + 1] = (tLen) & 0xFF;
+  tPacket[TCP_PKT_PAYLOAD_SIZE_IDX]     = (json_Len >> 8) & 0xFF;
+  tPacket[TCP_PKT_PAYLOAD_SIZE_IDX + 1] = (json_Len) & 0xFF;
   // Add Payload Data
-  memset(&tPacket[TCP_PKT_PAYLOAD_DATA_IDX], (char)0x00, 1);
+  memcpy(&tPacket[TCP_PKT_PAYLOAD_DATA_IDX], tJson, json_Len);
+  // Calculate and add CRC of data
+  tPacket[json_Len + 3] = crc8(&tPacket[TCP_PKT_PAYLOAD_DATA_IDX], json_Len);
 
   // Send data
-  CDC_Transmit_FS(tPacket, tLen + 4);
+  CDC_Transmit_FS(tPacket, json_Len + 4);
 
   for (uint32_t i = 0; i < TCP_TIMEOUT; i++)
   {
-    if (tcpData_CB[TCP_TYPE_TCP_CHECK_CONNECTION].State != TCP_DATA_CB_STATE_ERR)
+    if (tcpData_CB.State != TCP_DATA_CB_STATE_ERR)
     {
-      Status_Data->Status = (TCP_Status_T)((uint8_t)tcpData_CB[TCP_TYPE_TCP_CHECK_CONNECTION].Data[0]);
-      memcpy(Status_Data->IP_Addr, &tcpData_CB[TCP_TYPE_TCP_CHECK_CONNECTION].Data[1], 15);
-      memcpy(Status_Data->Port, &tcpData_CB[TCP_TYPE_TCP_CHECK_CONNECTION].Data[16], 4);
+      // Change state callback packet
+      tcpData_CB.State = TCP_DATA_CB_STATE_ERR;
 
-      tcpData_CB[TCP_TYPE_TCP_CHECK_CONNECTION].State = TCP_DATA_CB_STATE_ERR;
-      return TCP_STATUS_OK;
+      // Create json value
+      JSON_Value *smRoot_Value;
+      const char *tCommand = NULL;
+      // Parse to string
+      smRoot_Value = json_parse_string((char *)tcpData_CB.Data);
+      tCommand = json_object_get_string(json_object(smRoot_Value), "Data");
+      if (strcmp(tCommand, "TCP_check_status_connection") == 0)
+      {
+        // get status
+				const char *tStatus = NULL;
+        const char *tIP_Address = NULL;
+        uint16_t tPort;
+        tStatus = json_object_get_string(json_object(smRoot_Value), "Status");
+        tIP_Address = json_object_dotget_string(json_object(smRoot_Value), "Value.IP_address");
+        tPort = (uint16_t)json_object_dotget_number(json_object(smRoot_Value), "Value.Port");
+
+        // Copy data to response
+        Status_Data->Status = ((strcmp(tStatus, "OK") ==0) ? TCP_STATUS_OK : TCP_STATUS_ERR);
+        Status_Data->IP_Addr = (char *)tIP_Address;
+        Status_Data->Port = tPort;
+
+        return TCP_STATUS_OK;
+      }
+      else 
+      {
+        return TCP_STATUS_ERR;
+      }
     }
   }
 
-  return TCP_STATUS_ERR;
+  return TCP_STATUS_ERR_TIMEOUT;
 }
 
 /*!
@@ -278,38 +330,72 @@ TCP_Status_T TCP_Check_Connection_Status(TCP_Connection_Status_T *Status_Data)
  *
  * @return  
  ********************************************************************************/
-TCP_Status_T TCP_Establish_Connection(TCP_IP_Addr_T *Addr, TCP_Port *Port)
+TCP_Status_T TCP_Establish_Connection(TCP_IP_Addr_T *Addr, TCP_Port Port)
 {
-  uint8_t tPacket[23];
+  // Create json value
+  JSON_Value* root_value = json_value_init_object();
+  JSON_Object* root_object = json_value_get_object(root_value);
 
-  uint8_t tLen = 19;
-  uint8_t rx_Buf[5];
+  json_object_set_string(root_object, "Cmd", "TCP_establish_connection");
+  json_object_dotset_string(root_object, "Value.IP_address", Addr);
+  json_object_dotset_number(root_object, "Value.Port", (double)Port);
+  // Parse to string
+  char* tJson = NULL;
+  tJson = json_serialize_to_string_pretty(root_value);
+
+  uint16_t json_Len = strlen(tJson);
+  uint8_t tPacket[json_Len + 4];
 
   // Add header
   tPacket[TCP_PKT_HEADER_IDX]           = TCP_PKT_HEADER;
-  // Add type
-  tPacket[TCP_PKT_TYPE_IDX]             = TCP_TYPE_TCP_ESTAB_CONNECTION;
   // Add Payload Size
-  tPacket[TCP_PKT_PAYLOAD_SIZE_IDX]     = (tLen >> 8) & 0xFF;
-  tPacket[TCP_PKT_PAYLOAD_SIZE_IDX + 1] = (tLen) & 0xFF;
+  tPacket[TCP_PKT_PAYLOAD_SIZE_IDX]     = (json_Len >> 8) & 0xFF;
+  tPacket[TCP_PKT_PAYLOAD_SIZE_IDX + 1] = (json_Len) & 0xFF;
   // Add Payload Data
-  memcpy((char *)&tPacket[TCP_PKT_PAYLOAD_DATA_IDX], (char *)Addr, 15);
-
-  memcpy((char*)&tPacket[TCP_PKT_PAYLOAD_DATA_IDX + 15], Port, 4);
+  memcpy(&tPacket[TCP_PKT_PAYLOAD_DATA_IDX], tJson, json_Len);
+  // Calculate and add CRC of data
+	uint8_t crc = crc8(&tPacket[TCP_PKT_PAYLOAD_DATA_IDX], json_Len);
+  tPacket[json_Len + 3] = crc8(&tPacket[TCP_PKT_PAYLOAD_DATA_IDX], json_Len);
 
   // Send data
-  CDC_Transmit_FS(tPacket, tLen + 4);
+  CDC_Transmit_FS(tPacket, json_Len + 4);
 
   for (uint32_t i = 0; i < TCP_TIMEOUT; i++)
   {
-    if (tcpData_CB[TCP_TYPE_TCP_ESTAB_CONNECTION].State != TCP_DATA_CB_STATE_ERR)
+    if (tcpData_CB.State != TCP_DATA_CB_STATE_ERR)
     {
-      tcpData_CB[TCP_TYPE_TCP_ESTAB_CONNECTION].State = TCP_DATA_CB_STATE_ERR;
-      return TCP_STATUS_OK;
+      // Change state callback packet
+      tcpData_CB.State = TCP_DATA_CB_STATE_ERR;
+      
+      // Create json value
+      JSON_Value *smRoot_Value;
+      const char *tCommand = NULL;
+      // Parse to string
+      smRoot_Value = json_parse_string((char *)tcpData_CB.Data);
+      tCommand = json_object_get_string(json_object(smRoot_Value), "Data");
+      if (strcmp(tCommand, "TCP_establish_connection") == 0)
+      {
+        // get status
+				const char *tStatus = NULL;
+        tStatus = json_object_get_string(json_object(smRoot_Value), "Status");
+
+        if (strcmp(tStatus, "OK") == 0)
+        {
+          return TCP_STATUS_OK;
+        }
+        else 
+        {
+          return TCP_STATUS_ERR;
+        }
+      }
+      else 
+      {
+        return TCP_STATUS_ERR;
+      }
     }
   }
 
-  return TCP_STATUS_ERR;
+  return TCP_STATUS_ERR_TIMEOUT;
 }
 
 /*!
@@ -324,30 +410,65 @@ TCP_Status_T TCP_Establish_Connection(TCP_IP_Addr_T *Addr, TCP_Port *Port)
  ********************************************************************************/
 TCP_Status_T TCP_Send_Data(TCP_Data_T *Send_Data, TCP_Len_T Len)
 {
-  uint8_t tPacket[Len + 4];
+  // Create json value
+  JSON_Value* root_value = json_value_init_object();
+  JSON_Object* root_object = json_value_get_object(root_value);
 
-  uint8_t tLen = Len;
-  uint8_t rx_Buf[5];
+  json_object_set_string(root_object, "Cmd", "TCP_send_data");
+  json_object_dotset_string(root_object, "Value.Data", Send_Data);
+  json_object_dotset_number(root_object, "Value.Len", (double)Len);
+  // Parse to string
+  char* tJson = NULL;
+  tJson = json_serialize_to_string_pretty(root_value);
+
+  uint16_t json_Len = strlen(tJson);
+  uint8_t tPacket[json_Len + 4];
 
   // Add header
   tPacket[TCP_PKT_HEADER_IDX]           = TCP_PKT_HEADER;
-  // Add type
-  tPacket[TCP_PKT_TYPE_IDX]             = TCP_TYPE_TCP_SEND_DATA;
   // Add Payload Size
-  tPacket[TCP_PKT_PAYLOAD_SIZE_IDX]     = (tLen >> 8) & 0xFF;
-  tPacket[TCP_PKT_PAYLOAD_SIZE_IDX + 1] = (tLen) & 0xFF;
+  tPacket[TCP_PKT_PAYLOAD_SIZE_IDX]     = (json_Len >> 8) & 0xFF;
+  tPacket[TCP_PKT_PAYLOAD_SIZE_IDX + 1] = (json_Len) & 0xFF;
   // Add Payload Data
-  memcpy((char *)&tPacket[TCP_PKT_PAYLOAD_DATA_IDX], (char *)Send_Data, Len);
+  memcpy(&tPacket[TCP_PKT_PAYLOAD_DATA_IDX], tJson, json_Len);
+  // Calculate and add CRC of data
+  tPacket[json_Len + 3] = crc8(&tPacket[TCP_PKT_PAYLOAD_DATA_IDX], json_Len);
 
   // Send data
-  CDC_Transmit_FS(tPacket, tLen + 4);
+  CDC_Transmit_FS(tPacket, json_Len + 4);
 
   for (uint32_t i = 0; i < TCP_TIMEOUT; i++)
   {
-    if (tcpData_CB[TCP_TYPE_TCP_SEND_DATA].State != TCP_DATA_CB_STATE_ERR)
+    if (tcpData_CB.State != TCP_DATA_CB_STATE_ERR)
     {
-      tcpData_CB[TCP_TYPE_TCP_SEND_DATA].State = TCP_DATA_CB_STATE_ERR;
-      return TCP_STATUS_OK;
+      // Change state callback packet
+      tcpData_CB.State = TCP_DATA_CB_STATE_ERR;
+      
+      // Create json value
+      JSON_Value *smRoot_Value;
+      const char *tCommand = NULL;
+      // Parse to string
+      smRoot_Value = json_parse_string((char *)tcpData_CB.Data);
+      tCommand = json_object_get_string(json_object(smRoot_Value), "Data");
+      if (strcmp(tCommand, "TCP_send_data") == 0)
+      {
+        // get status
+				const char *tStatus = NULL;
+        tStatus = json_object_get_string(json_object(smRoot_Value), "Status");
+
+        if (strcmp(tStatus, "OK") == 0)
+        {
+          return TCP_STATUS_OK;
+        }
+        else 
+        {
+          return TCP_STATUS_ERR;
+        }
+      }
+      else 
+      {
+        return TCP_STATUS_ERR;
+      }
     }
   }
 
@@ -366,43 +487,70 @@ TCP_Status_T TCP_Send_Data(TCP_Data_T *Send_Data, TCP_Len_T Len)
  ********************************************************************************/
 TCP_Status_T TCP_Receive_Data(TCP_Data_T *Receive_Data)
 {
-  uint8_t tPacket[100];
-  uint8_t tLen = 1;
+  // Create json value
+  JSON_Value* root_value = json_value_init_object();
+  JSON_Object* root_object = json_value_get_object(root_value);
 
-  uint8_t rx_Buf[5];
+  json_object_set_string(root_object, "Cmd", "TCP_receive_data");
+  // Parse to string
+  char* tJson = NULL;
+  tJson = json_serialize_to_string_pretty(root_value);
+
+  uint16_t json_Len = strlen(tJson);
+  uint8_t tPacket[json_Len + 4];
 
   // Add header
   tPacket[TCP_PKT_HEADER_IDX]           = TCP_PKT_HEADER;
-  // Add type
-  tPacket[TCP_PKT_TYPE_IDX]             = TCP_TYPE_TCP_REC_DATA;
   // Add Payload Size
-  tPacket[TCP_PKT_PAYLOAD_SIZE_IDX]     = (tLen >> 8) & 0xFF;
-  tPacket[TCP_PKT_PAYLOAD_SIZE_IDX + 1] = (tLen) & 0xFF;
+  tPacket[TCP_PKT_PAYLOAD_SIZE_IDX]     = (json_Len >> 8) & 0xFF;
+  tPacket[TCP_PKT_PAYLOAD_SIZE_IDX + 1] = (json_Len) & 0xFF;
   // Add Payload Data
-  memset(&tPacket[TCP_PKT_PAYLOAD_DATA_IDX], (char)0x00, tLen);
+  memcpy(&tPacket[TCP_PKT_PAYLOAD_DATA_IDX], tJson, json_Len);
+  // Calculate and add CRC of data
+  tPacket[json_Len + 3] = crc8(&tPacket[TCP_PKT_PAYLOAD_DATA_IDX], json_Len);
 
   // Send data
-  CDC_Transmit_FS(tPacket, tLen + 4);
+  CDC_Transmit_FS(tPacket, json_Len + 4);
 
   for (uint32_t i = 0; i < TCP_TIMEOUT; i++)
   {
-    if (tcpData_CB[TCP_TYPE_TCP_REC_DATA].State != TCP_DATA_CB_STATE_ERR)
+    if (tcpData_CB.State != TCP_DATA_CB_STATE_ERR)
     {
-			
-      tcpData_CB[TCP_TYPE_TCP_REC_DATA].State = TCP_DATA_CB_STATE_ERR;
-      memcpy(Receive_Data, 
-             &tcpData_CB[TCP_TYPE_TCP_REC_DATA].Data, 
-             tcpData_CB[TCP_TYPE_TCP_REC_DATA].Len);
-//			for (uint8_t i = 0; i < tcpData_CB[TCP_TYPE_TCP_REC_DATA].Len; i++)
-//			{
-//				Receive_Data[i] = tcpData_CB[TCP_TYPE_TCP_REC_DATA].Data[i];
-//			}
-			
-      return TCP_STATUS_OK;
+      // Change state callback packet
+      tcpData_CB.State = TCP_DATA_CB_STATE_ERR;
+
+      // Create json value
+      JSON_Value *smRoot_Value;
+      const char *tCommand = NULL;
+      // Parse to string
+      smRoot_Value = json_parse_string((char *)tcpData_CB.Data);
+      tCommand = json_object_get_string(json_object(smRoot_Value), "Data");
+      if (strcmp(tCommand, "TCP_receive_data") == 0)
+      {
+        // get status
+				const char *tStatus = NULL;
+        const char *tValueData = NULL;
+        uint16_t tLen;
+        tStatus = json_object_get_string(json_object(smRoot_Value), "Status");
+        tValueData = json_object_dotget_string(json_object(smRoot_Value), "Value.Data");
+        tLen = (uint16_t)json_object_dotget_number(json_object(smRoot_Value), "Value.Len");
+
+        // Copy data to response
+        memcpy(Receive_Data, tValueData, tLen);
+
+        if (strcmp(tStatus, "OK") == 0)
+          return TCP_STATUS_OK;
+        else 
+          return TCP_STATUS_ERR;
+      }
+      else 
+      {
+        return TCP_STATUS_ERR;
+      }
     }
   }
 
-  return TCP_STATUS_ERR;
+  return TCP_STATUS_ERR_TIMEOUT;
 }
 
 /*!
@@ -417,30 +565,63 @@ TCP_Status_T TCP_Receive_Data(TCP_Data_T *Receive_Data)
  ********************************************************************************/
 TCP_Status_T TCP_Close_Connection(void)
 {
-  uint8_t tPacket[100];
-  uint8_t tLen = 1;
+  // Create json value
+  JSON_Value* root_value = json_value_init_object();
+  JSON_Object* root_object = json_value_get_object(root_value);
 
-  uint8_t rx_Buf[5];
+  json_object_set_string(root_object, "Cmd", "TCP_close_connection");
+  // Parse to string
+  char* tJson = NULL;
+  tJson = json_serialize_to_string_pretty(root_value);
+
+  uint16_t json_Len = strlen(tJson);
+  uint8_t tPacket[json_Len + 4];
 
   // Add header
   tPacket[TCP_PKT_HEADER_IDX]           = TCP_PKT_HEADER;
-  // Add type
-  tPacket[TCP_PKT_TYPE_IDX]             = TCP_TYPE_TCP_CLOSE_CONNECTION;
   // Add Payload Size
-  tPacket[TCP_PKT_PAYLOAD_SIZE_IDX]     = (tLen >> 8) & 0xFF;
-  tPacket[TCP_PKT_PAYLOAD_SIZE_IDX + 1] = (tLen) & 0xFF;
+  tPacket[TCP_PKT_PAYLOAD_SIZE_IDX]     = (json_Len >> 8) & 0xFF;
+  tPacket[TCP_PKT_PAYLOAD_SIZE_IDX + 1] = (json_Len) & 0xFF;
   // Add Payload Data
-  memset(&tPacket[TCP_PKT_PAYLOAD_DATA_IDX], (char)0x00, tLen);
+  memcpy(&tPacket[TCP_PKT_PAYLOAD_DATA_IDX], tJson, json_Len);
+  // Calculate and add CRC of data
+  tPacket[json_Len + 3] = crc8(&tPacket[TCP_PKT_PAYLOAD_DATA_IDX], json_Len);
 
   // Send data
-  CDC_Transmit_FS(tPacket, tLen + 4);
+  CDC_Transmit_FS(tPacket, json_Len + 4);
 
   for (uint32_t i = 0; i < TCP_TIMEOUT; i++)
   {
-    if (tcpData_CB[TCP_TYPE_TCP_CLOSE_CONNECTION].State != TCP_DATA_CB_STATE_ERR)
+    if (tcpData_CB.State != TCP_DATA_CB_STATE_ERR)
     {
-      tcpData_CB[TCP_TYPE_TCP_CLOSE_CONNECTION].State = TCP_DATA_CB_STATE_ERR;
-      return TCP_STATUS_OK;
+      // Change state callback packet
+      tcpData_CB.State = TCP_DATA_CB_STATE_ERR;
+      
+      // Create json value
+      JSON_Value *smRoot_Value;
+      const char *tCommand = NULL;
+      // Parse to string
+      smRoot_Value = json_parse_string((char *)tcpData_CB.Data);
+      tCommand = json_object_get_string(json_object(smRoot_Value), "Data");
+      if (strcmp(tCommand, "TCP_close_connection") == 0)
+      {
+        // get status
+				const char *tStatus = NULL;
+        tStatus = json_object_get_string(json_object(smRoot_Value), "Status");
+
+        if (strcmp(tStatus, "OK") == 0)
+        {
+          return TCP_STATUS_OK;
+        }
+        else 
+        {
+          return TCP_STATUS_ERR;
+        }
+      }
+      else 
+      {
+        return TCP_STATUS_ERR;
+      }
     }
   }
 

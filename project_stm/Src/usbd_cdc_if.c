@@ -23,7 +23,7 @@
 #include "usbd_cdc_if.h"
 
 /* USER CODE BEGIN INCLUDE */
-extern uint8_t rec_data[64];
+//extern uint8_t rec_data[64];
 uint8_t idx = 0;
 /* USER CODE END INCLUDE */
 
@@ -266,8 +266,8 @@ static int8_t CDC_Control_FS(uint8_t cmd, uint8_t* pbuf, uint16_t length)
 static int8_t CDC_Receive_FS(uint8_t* Buf, uint32_t *Len)
 {
   /* USER CODE BEGIN 6 */
+	//memcpy(&rec_data[idx], Buf, (int)*Len);
   CDC_Callback_Fxn(Buf, (int)*Len);
-	memcpy(&rec_data[idx], Buf, (int)*Len);
 	idx += *Len;
 	
 	if (idx >= 64)

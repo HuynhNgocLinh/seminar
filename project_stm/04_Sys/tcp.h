@@ -30,7 +30,8 @@ extern "C" {
 typedef enum 
 {
   TCP_STATUS_OK,
-  TCP_STATUS_ERR
+  TCP_STATUS_ERR,
+  TCP_STATUS_ERR_TIMEOUT
 } TCP_Status_T;
 
 // typedef enum 
@@ -39,21 +40,21 @@ typedef enum
 //   TCP_CONNECTION_STATUS_ERR
 // } TCP_Connection_Status_T;
 
-typedef char TCP_IP_Addr_T;
-typedef char TCP_Port;
-typedef char TCP_Data_T;
+typedef char    TCP_IP_Addr_T;
+typedef uint16_t TCP_Port;
+typedef char     TCP_Data_T;
 typedef uint16_t TCP_Len_T;
 
 typedef struct 
 {
-  TCP_Status_T Status;
-  TCP_IP_Addr_T IP_Addr[15];
-  TCP_Port Port[4];
+  TCP_Status_T  Status;
+  TCP_IP_Addr_T *IP_Addr;
+  TCP_Port      Port;
 } TCP_Connection_Status_T;
 /********************************************************************************
  * FUNCTIONS - API
  ********************************************************************************/
-void TCP_Init(void);
+TCP_Status_T TCP_Init(void);
 /*!
  *******************************************************************************
  * @fn      TCP_Check_Connection_Status(void)
@@ -76,7 +77,7 @@ TCP_Status_T TCP_Check_Connection_Status(TCP_Connection_Status_T *Status);
  *
  * @return  
  ********************************************************************************/
-TCP_Status_T TCP_Establish_Connection(TCP_IP_Addr_T *Addr, TCP_Port *Port);
+TCP_Status_T TCP_Establish_Connection(TCP_IP_Addr_T *Addr, TCP_Port Port);
 
 /*!
  *******************************************************************************
