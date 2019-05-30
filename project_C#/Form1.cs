@@ -11,63 +11,43 @@ using System.Windows.Forms;
 using System.IO;
 using System.IO.Ports;
 using CircularBuffer;
+using Newtonsoft.Json.Linq;
 
 namespace Monitor
 {
   public enum USB_State_T
   {
     STATE_GET_HEADER,
-    STATE_GET_TYPE,
     STATE_GET_PAYLOAD_SIZE,
     STATE_GET_PAYLOAD_DATA,
+    STATE_GET_CRC
   }
 
-  public enum USB_Type_T
-  {
-    USB_TYPE_CHECK_CONNECTION,
-    USB_TYPE_ESTABLISH_TCP_CONNECTION,
-    USB_TYPE_SEND_DATA_TO_TCP_SERVER,
-    USB_TYPE_REC_DATA_FROM_TCP_SERVER,
-    USB_TYPE_CLOSE_TCP_CONNECTION,
-    USB_TYPE_MAX
-  }
 
 
   public struct USB_Packet_T
   {
     public uint   Header;
-    public uint   Type;
     public uint   Payload_Size;
-
     public char[] Payload_Data;
+    public byte   CRC_8;
     
-    public USB_Packet_T(uint Header, uint Type, uint Payload_Size, char[] Payload_Data)
+    public USB_Packet_T(uint Header, uint Payload_Size, char[] Payload_Data, byte CRC_8)
     {
       this.Header       = Header;
-      this.Type         = Type;
       this.Payload_Size = Payload_Size;
       this.Payload_Data = Payload_Data;
+      this.CRC_8        = CRC_8;
     }
   }
 
-  public enum USB_Evt_Type_T
-  {
-    USB_EVT_TYPE_CHECK_STATUS_CONNECTION,
-    USB_EVT_TYPE_ESTABLISH_TCP_CONNECTION,
-    USB_EVT_TYPE_SEND_DATA_TO_TCP_SERVER,
-    USB_EVT_TYPE_REC_DATA_FROM_TCP_SERVER,
-    USB_EVT_TYPE_CLOSE_TCP_CONNECTION,
-    USB_EVT_TYPE_MAX
-  }
 
   public struct USB_Evt_T
   {
-    public USB_Evt_Type_T Type;
     public char[]         Data;
 
-    public USB_Evt_T(USB_Evt_Type_T Type, char[] Data)
+    public USB_Evt_T(char[] Data)
     {
-      this.Type = Type;
       this.Data = Data;
     }
   }
@@ -76,20 +56,17 @@ namespace Monitor
 
   public partial class Form1 : Form
   {
-    string inputData = string.Empty;
+    
     delegate void Set_Text_CB(string text);
     
     // Circular buffer
-    static CircularBuffer<char> cBuffer;
+    static CircularBuffer<byte> cBuffer;
 
     static CircularBuffer<USB_Evt_T> cBuffer_Process_Data;
 
     USB_State_T usbState = USB_State_T.STATE_GET_HEADER;
-    USB_Packet_T usbPacket = new USB_Packet_T(0, 0, 0, new char[1000]);
+    USB_Packet_T usbPacket = new USB_Packet_T(0, 0, new char[1000], 0);
 
-
-    public char[] tArr;
-    public string tChar;
 
     public int countEvt = 0;
 
@@ -104,7 +81,7 @@ namespace Monitor
       InitializeComponent();
 
       serialPort.DataReceived += new SerialDataReceivedEventHandler(Data_Receive);
-      cBuffer                  = new CircularBuffer<char>(1000, false);
+      cBuffer                  = new CircularBuffer<byte>(1000, false);
       cBuffer_Process_Data     = new CircularBuffer<USB_Evt_T>(50, false);
 
       tcpCmd = new TCP_IP_Cmd();
@@ -146,20 +123,6 @@ namespace Monitor
               // Check header
               if (usbPacket.Header == 0x55)
               {
-                usbState = USB_State_T.STATE_GET_TYPE;
-              }
-              else
-              {
-                usbState = USB_State_T.STATE_GET_HEADER;
-              }
-
-              break;
-            case USB_State_T.STATE_GET_TYPE:
-              usbPacket.Type = Convert.ToByte(cBuffer.Get());
-
-              // Check type
-              if (usbPacket.Type <= 0x04)
-              {
                 usbState = USB_State_T.STATE_GET_PAYLOAD_SIZE;
               }
               else
@@ -175,7 +138,7 @@ namespace Monitor
                 //t_Data = Array.ConvertAll(cBuffer.Get(2), uint.Parse);
                 
                 //usbPacket.Payload_Size = (t_Data[0] << 8) | t_Data[1];
-                char[] t_Data = cBuffer.Get(2);
+                byte[] t_Data = cBuffer.Get(2);
 
                 usbPacket.Payload_Size =  (uint)((t_Data[0] << 8) | t_Data[1]);
 
@@ -195,61 +158,33 @@ namespace Monitor
               
               if (cBuffer.Size >= usbPacket.Payload_Size)
               {
-                tArr = new char[20];
-                tChar = "OK";
-                usbPacket.Payload_Data = cBuffer.Get((int)usbPacket.Payload_Size);
-                // usbPacket.Payload_Data = Array.ConvertAll(cBuffer.Get((int)usbPacket.Payload_Size), char.Parse);
-                switch(usbPacket.Type)
-                {
-                  case 0x00:
-                    USB_Update_To_Evt(USB_Evt_Type_T.USB_EVT_TYPE_CHECK_STATUS_CONNECTION, 
-                                      usbPacket.Payload_Data, 
-                                      usbPacket.Payload_Size);
-                   
-                  break;
-
-                  case 0x01:
-                    USB_Update_To_Evt(USB_Evt_Type_T.USB_EVT_TYPE_ESTABLISH_TCP_CONNECTION, 
-                                      usbPacket.Payload_Data, 
-                                      usbPacket.Payload_Size);
-                    
-                  break;
-
-                  case 0x02:
-                    USB_Update_To_Evt(USB_Evt_Type_T.USB_EVT_TYPE_SEND_DATA_TO_TCP_SERVER, 
-                                      usbPacket.Payload_Data, 
-                                      usbPacket.Payload_Size);
-
-                  break;
-                  
-                  case 0x03:
-                    USB_Update_To_Evt(USB_Evt_Type_T.USB_EVT_TYPE_REC_DATA_FROM_TCP_SERVER, 
-                                      usbPacket.Payload_Data, 
-                                      usbPacket.Payload_Size);
-                    
-                  break;
-
-                  case 0x04:
-                    USB_Update_To_Evt(USB_Evt_Type_T.USB_EVT_TYPE_CLOSE_TCP_CONNECTION, 
-                                      usbPacket.Payload_Data, 
-                                      usbPacket.Payload_Size);
-
-                  break;
-                
-                  default:break;
-                }
-                
-                // Clear packet data
-                usbPacket.Header = 0;
-                usbPacket.Type = 0;
-                usbPacket.Payload_Size = 0;
-                Array.Clear(usbPacket.Payload_Data, 0, usbPacket.Payload_Data.Length);
-
-                // Change to STATE_GET_HEADER
-                usbState = USB_State_T.STATE_GET_HEADER;
-
+                usbPacket.Payload_Data = System.Text.Encoding.ASCII.GetString(cBuffer.Get((int)usbPacket.Payload_Size)).ToCharArray();
+                usbState = USB_State_T.STATE_GET_CRC;
               }
                 break;
+
+            case USB_State_T.STATE_GET_CRC:
+              usbPacket.CRC_8 = Convert.ToByte(cBuffer.Get());
+
+              // Calculate and verify CRC of packet
+              CRC8Calc CRC = new CRC8Calc(CRC8_POLY.CRC8_CCITT);
+              byte[] tPacket_Byte_Convert = Encoding.ASCII.GetBytes(usbPacket.Payload_Data);
+              byte CRC_Value = CRC.Checksum(tPacket_Byte_Convert);
+              if (CRC_Value == usbPacket.CRC_8)
+              {
+                USB_Update_To_Evt(usbPacket.Payload_Data, usbPacket.Payload_Size);
+              }
+
+              // Clear packet data
+              usbPacket.Header = 0;
+              usbPacket.Payload_Size = 0;
+              Array.Clear(usbPacket.Payload_Data, 0, usbPacket.Payload_Data.Length);
+              usbPacket.CRC_8 = 0;
+
+              // Change to STATE_GET_HEADER
+              usbState = USB_State_T.STATE_GET_HEADER;
+
+            break;
             default:
                 break;
           }
@@ -265,121 +200,91 @@ namespace Monitor
     { 
       while (!cBuffer_Process_Data.IsEmpty)
       {
-        USB_Evt_T tUSB = new USB_Evt_T(0, new char[1000]);
+        USB_Evt_T tUSB = new USB_Evt_T(new char[1000]);
         tUSB = cBuffer_Process_Data.Get();
         TCP_Base_Type.TCP_IP_Status_T Status;
-        switch (tUSB.Type)
+
+        string json = new string(tUSB.Data);
+
+        JObject jsonParse = JObject.Parse(json);
+        string Cmd = (string)jsonParse["Cmd"];
+
+        if (Cmd == "TCP_check_status_connection")
         {
-          case USB_Evt_Type_T.USB_EVT_TYPE_CHECK_STATUS_CONNECTION:
+          TCP_Base_Type.TCP_IP_Info_T Data_Receive;
+          Data_Receive = tcpCmd.checkStatusConnection();
 
-            tArr[0] = (char)0x55;
-            tArr[1] = (char)0x01;
-            tArr[2] = (char)tUSB.Type;
-            tArr[3] = (char)0x03;
-            tArr[4] = (char)0x04;
-            Array.Copy(tUSB.Data, 0, tArr, 5, 3);
+          JObject response_Value = new JObject();
+          response_Value["Data"] = "TCP_check_status_connection";
+          response_Value["Status"] = "OK";
+          JObject Value_Obj = new JObject();
+          Value_Obj["IP_address"] = Data_Receive.ipAddr;
+          Value_Obj["Port"] = Data_Receive.port;
+          response_Value["Value"] = Value_Obj;
 
-            serialPort.Write(tArr, 0, 8);
-              //Console.WriteLine("USB_EVT_TYPE_CHECK_STATUS_CONNECTION");
-            break;
-          case USB_Evt_Type_T.USB_EVT_TYPE_ESTABLISH_TCP_CONNECTION:
-            //tArr[0] = (char)0x55;
-            //tArr[1] = (char)0x01;
-            //tArr[2] = (char)tUSB.Type;
-            //tArr[3] = (char)0x03;
-            //tArr[4] = (char)0x04;
-            //Array.Copy(tUSB.Data, 0, tArr, 5, 3);
+          USB_Convert_And_Send_Data(response_Value.ToString(), (uint)response_Value.ToString().Length);
+        }
+        else if (Cmd == "TCP_establish_connection")
+        {
+          JObject ValueObj = (JObject)jsonParse["Value"];
 
-            //serialPort.Write(tArr, 0, 8);
-            
-            char[] tIP_Addr = new char[9];
-            Array.Copy(tUSB.Data, tIP_Addr, 9);
-            string IP_Addr = new string(tIP_Addr);
+          string IP_Address = (string)ValueObj["IP_address"];
+          int Port = (int)ValueObj["Port"];
 
-            char[] tPort = new char[4];
-            Array.Copy(tUSB.Data, 15, tPort, 0, 4);
+          Status = tcpCmd.establishConnetion(IP_Address, Port);
 
-            int Port;
-            Port = (tPort[0] - '0') * 1000 + (tPort[1] - '0') * 100 + (tPort[2] - '0') * 10 + (tPort[3] - '0');
-            
+          JObject response_Value = new JObject();
+          response_Value["Data"] = "TCP_establish_connection";
+          response_Value["Status"] = (Status == 0 ? "OK" : "EROR");
 
-            Status = tcpCmd.establishConnetion(IP_Addr, Port);
+          USB_Convert_And_Send_Data(response_Value.ToString(), (uint)response_Value.ToString().Length);
+        }
+        else if (Cmd == "TCP_send_data")
+        {
+          JObject ValueObj = (JObject)jsonParse["Value"];
 
-            tArr[0] = (char)0x55;
-            tArr[1] = (char)tUSB.Type;
-            tArr[2] = (char)0x00;
-            tArr[3] = (char)0x01;
-            tArr[4] = (char)Status;
-            serialPort.Write(tArr, 0, 5);
+          string Data = (string)ValueObj["Data"];
+          //int Len = (int)ValueObj["Len"];
 
+          Status = tcpCmd.sendData(Data);
 
-            break;
-          case USB_Evt_Type_T.USB_EVT_TYPE_SEND_DATA_TO_TCP_SERVER:
-            //tArr[0] = (char)0x55;
-            //tArr[1] = (char)0x01;
-            //tArr[2] = (char)tUSB.Type;
-            //tArr[3] = (char)0x03;
-            //tArr[4] = (char)0x04;
-            //Array.Copy(tUSB.Data, 0, tArr, 5, 3);
+          JObject response_Value = new JObject();
+          response_Value["Data"] = "TCP_send_data";
+          response_Value["Status"] = (Status == 0 ? "OK" : "EROR");
 
-            //serialPort.Write(tArr, 0, 8);
+          USB_Convert_And_Send_Data(response_Value.ToString(), (uint)response_Value.ToString().Length);
+        }
+        else if (Cmd == "TCP_receive_data")
+        {
+          string Data_Receive;
+          Data_Receive = tcpCmd.receiveData();
 
-            char[] tData_Send = new char[100];
-            Array.Copy(tUSB.Data, tData_Send, 4);
+          JObject response_Value = new JObject();
+          response_Value["Data"] = "TCP_receive_data";
+          response_Value["Status"] = (Data_Receive.Length != 0 ? "OK" : "EROR");
+          JObject Value_Obj = new JObject();
+          Value_Obj["Data"] = Data_Receive;
+          Value_Obj["Len"]  = Data_Receive.Length;
+          response_Value["Value"] = Value_Obj;
 
-            string Data_send = new string(tData_Send);
+          USB_Convert_And_Send_Data(response_Value.ToString(), (uint)response_Value.ToString().Length);
+        }
+        else if (Cmd == "TCP_close_connection")
+        {
+          Status = tcpCmd.closeConnection();
 
-            Status = tcpCmd.sendData(Data_send);
+          JObject response_Value = new JObject();
+          response_Value["Data"] = "TCP_close_connection";
+          response_Value["Status"] = (Status == 0 ? "OK" : "EROR");
 
-            tArr[0] = (char)0x55;
-            tArr[1] = (char)tUSB.Type;
-            tArr[2] = (char)0x00;
-            tArr[3] = (char)0x01;
-            tArr[4] = (char)Status;
-            serialPort.Write(tArr, 0, 5);
-
-            //Console.WriteLine("USB_EVT_TYPE_SEND_DATA_TO_TCP_SERVER");
-            break;
-          case USB_Evt_Type_T.USB_EVT_TYPE_REC_DATA_FROM_TCP_SERVER:
-            //tArr[0] = (char)0x55;
-            //tArr[1] = (char)0x01;
-            //tArr[2] = (char)tUSB.Type;
-            //tArr[3] = (char)0x03;
-            //tArr[4] = (char)0x04;
-            //Array.Copy(tUSB.Data, 0, tArr, 5, 3);
-
-            //serialPort.Write(tArr, 0, 8);
-            string Rec_Data;
-
-            Rec_Data = tcpCmd.receiveData();
-            tArr[0] = (char)0x55;
-            tArr[1] = (char)tUSB.Type;
-            tArr[2] = (char)0x00;
-            tArr[3] = (char)0x0A;
-            Array.Copy(Rec_Data.ToCharArray(), 0, tArr, 4, 10);
-            serialPort.Write(tArr, 0, 14);
-
-            //Console.WriteLine("USB_EVT_TYPE_REC_DATA_FROM_TCP_SERVER");
-            break;
-          case USB_Evt_Type_T.USB_EVT_TYPE_CLOSE_TCP_CONNECTION:
-            tArr[0] = (char)0x55;
-            tArr[2] = (char)tUSB.Type;
-            tArr[3] = (char)0x03;
-            tArr[4] = (char)0x04;
-            Array.Copy(tUSB.Data, 0, tArr, 5, 3);
-
-            serialPort.Write(tArr, 0, 8);
-              //Console.WriteLine("USB_EVT_TYPE_CLOSE_TCP_CONNECTION");
-              break;
-          default: break;
+          USB_Convert_And_Send_Data(response_Value.ToString(), (uint)response_Value.ToString().Length);
         }
       }
     }
 
-    private void USB_Update_To_Evt(USB_Evt_Type_T Type, char[] Data, uint Len)
+    private void USB_Update_To_Evt(char[] Data, uint Len)
     {
-      USB_Evt_T tEvt = new USB_Evt_T(0, new char[1000]);
-      tEvt.Type = Type;
+      USB_Evt_T tEvt = new USB_Evt_T(new char[Len]);
       Array.Copy(Data, tEvt.Data, Len);
 
       cBuffer_Process_Data.Put(tEvt);
@@ -388,6 +293,27 @@ namespace Monitor
       {
         threadProcData.RunWorkerAsync();
       }
+    }
+
+    private void USB_Convert_And_Send_Data(string Data, uint Len)
+    {
+      byte[] tPacket = new byte[Len + 4];
+
+      // Add header
+      tPacket[0] = 0x55;
+      // Add Paylioad size
+      tPacket[1] = (byte)((Len >> 8) & 0xFF);
+      tPacket[2] = (byte)((Len) & 0xFF);
+      // Add Paylioad data
+      Array.Copy(Encoding.ASCII.GetBytes(Data), 0 , tPacket, 3, Len);
+       // Calculate and add CRC to packet
+      CRC8Calc CRC = new CRC8Calc(CRC8_POLY.CRC8_CCITT);
+      byte[] tPacket_Byte_Convert = Encoding.ASCII.GetBytes(Data);
+      byte CRC_Value = CRC.Checksum(tPacket_Byte_Convert);
+      tPacket[Len + 3] = CRC_Value;
+
+      serialPort.Write(tPacket, 0, (int)(Len + 4));
+
     }
 
     private void Form1_Load(object sender, EventArgs e)
@@ -400,10 +326,15 @@ namespace Monitor
     {
         if (!serialPort.IsOpen)
         {
-            serialPort.PortName = comBox.Text;
-            serialPort.BaudRate = Convert.ToInt32(baudRateBox.Text);
+          serialPort.PortName = comBox.Text;
+          serialPort.BaudRate = Convert.ToInt32(baudRateBox.Text);
 
-            serialPort.Open();
+          serialPort.Open();
+
+          JObject response_Value = new JObject();
+          response_Value["Data"] = "USB_Handshake";
+          response_Value["Status"] = "OK";
+          USB_Convert_And_Send_Data(response_Value.ToString(), (uint)response_Value.ToString().Length);
         }
         else
         {
@@ -418,12 +349,14 @@ namespace Monitor
 
     private void Data_Receive(object obj, SerialDataReceivedEventArgs e)
     {
-      inputData = serialPort.ReadExisting();
+      //inputData = serialPort.ReadExisting();
+      int tLen = serialPort.BytesToRead;
+      byte[] inputData = new byte[tLen];
+      serialPort.Read(inputData, 0, tLen);
         
       // Write to circular buffer
-      cBuffer.Put(inputData.ToCharArray());
+      cBuffer.Put(inputData);
 
-      int tLen = cBuffer.Size;
       if (!threadRecData.IsBusy)
       {
         threadRecData.RunWorkerAsync();
