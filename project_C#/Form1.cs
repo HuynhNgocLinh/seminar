@@ -102,6 +102,15 @@ namespace Monitor
       threadProcData.DoWork += threadProcData_DoWork;
       //threadProcData.RunWorkerCompleted += threadProcData_RunWorkerCompleted;
 
+      // Init thread receive data from server
+      threadRecDataFromServer = new BackgroundWorker();
+      threadRecDataFromServer.WorkerReportsProgress = true;
+      threadRecDataFromServer.WorkerSupportsCancellation = true;
+
+      threadRecDataFromServer.DoWork += threadRecDataFromServer_DoWork;
+
+
+
       string[] baudRate = { "1200", "2400", "4800", "9600", "19200", "38400", "57600", "115200" };
 
       baudRateBox.Items.AddRange(baudRate);
@@ -110,6 +119,33 @@ namespace Monitor
 
       //comBox.Items.AddRange(COM);
     }
+
+    private void threadRecDataFromServer_DoWork(object sender, DoWorkEventArgs e)
+    {
+      int curData_Available = 0;
+      while (true)
+      {
+        int temp = 0;
+        // Detect rising edge of dataAvailable
+        if ((temp = tcpCmd.dataAvailable()) != curData_Available && curData_Available == 0)
+        {
+          curData_Available = temp;
+          //string Data_Receive;
+          //Data_Receive = tcpCmd.receiveData();
+
+          JObject response_Value = new JObject();
+          response_Value["Data"] = "TCP_data_available";
+          response_Value["Value"] = tcpCmd.dataAvailable();
+          USB_Convert_And_Send_Data(response_Value.ToString(), (uint)response_Value.ToString().Length);
+        }
+        else
+        {
+          curData_Available = temp;
+        }
+        Thread.Sleep(100);
+      }
+    }
+
 
     private void threadRecData_DoWork(object sender, DoWorkEventArgs e)
     {
@@ -232,6 +268,11 @@ namespace Monitor
           int Port = (int)ValueObj["Port"];
 
           Status = tcpCmd.establishConnetion(IP_Address, Port);
+
+          if (!threadRecData.IsBusy)
+          {
+            threadRecDataFromServer.RunWorkerAsync();
+          }
 
           JObject response_Value = new JObject();
           response_Value["Data"] = "TCP_establish_connection";

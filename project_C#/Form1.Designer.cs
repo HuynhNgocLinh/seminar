@@ -45,6 +45,7 @@ namespace Monitor
       this.viewStatusLabel = new System.Windows.Forms.Label();
       this.threadRecData = new System.ComponentModel.BackgroundWorker();
       this.threadProcData = new System.ComponentModel.BackgroundWorker();
+      this.threadRecDataFromServer = new System.ComponentModel.BackgroundWorker();
       this.SuspendLayout();
       // 
       // sendRecLabel
@@ -191,6 +192,7 @@ namespace Monitor
     private System.Windows.Forms.Label viewStatusLabel;
     private System.ComponentModel.BackgroundWorker threadRecData;
     private System.ComponentModel.BackgroundWorker threadProcData;
+    private System.ComponentModel.BackgroundWorker threadRecDataFromServer;
   }
 }
 

@@ -14,6 +14,10 @@ namespace Monitor
     private TcpClient client;
     private Stream stream;
 
+    public int dataAvailable()
+    {
+      return client.Available;
+    }
     public TCP_Base_Type.TCP_IP_Info_T checkStatusConnection()
     {
       TCP_Base_Type.TCP_IP_Info_T mInfo;
