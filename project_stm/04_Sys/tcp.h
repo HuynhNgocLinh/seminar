@@ -105,7 +105,7 @@ TCP_Status_T TCP_Receive_Data(TCP_Data_T *Receive_Data);
 
 /*!
  *******************************************************************************
- * @fn      TCP_Receive_Data(TCP_Data_T *Receive_Data)
+ * @fn      TCP_Data_Available()
  *
  * @brief   
  *
@@ -113,7 +113,7 @@ TCP_Status_T TCP_Receive_Data(TCP_Data_T *Receive_Data);
  *
  * @return  
  ********************************************************************************/
-TCP_Status_T TCP_Receive_Data(TCP_Data_T *Receive_Data);
+uint16_t TCP_Data_Available(void);
 
 /*!
  *******************************************************************************

@@ -552,7 +552,47 @@ TCP_Status_T TCP_Receive_Data(TCP_Data_T *Receive_Data)
 
   return TCP_STATUS_ERR_TIMEOUT;
 }
+/*!
+ *******************************************************************************
+ * @fn      TCP_Data_Available()
+ *
+ * @brief   
+ *
+ * @param   
+ *
+ * @return  
+ ********************************************************************************/
+uint16_t TCP_Data_Available()
+{
+  for (uint32_t i = 0; i < TCP_TIMEOUT; i++)
+  {
+    if (tcpData_CB.State != TCP_DATA_CB_STATE_ERR)
+    {
+      // Change state callback packet
+      tcpData_CB.State = TCP_DATA_CB_STATE_ERR;
 
+      // Create json value
+      JSON_Value *smRoot_Value;
+      const char *tCommand = NULL;
+      // Parse to string
+      smRoot_Value = json_parse_string((char *)tcpData_CB.Data);
+      tCommand = json_object_get_string(json_object(smRoot_Value), "Data");
+      if (strcmp(tCommand, "TCP_data_available") == 0)
+      {
+        uint16_t tLen;
+        tLen = (uint16_t)json_object_get_number(json_object(smRoot_Value), "Value");
+
+        return tLen;
+      }
+      else 
+      {
+        return 0;
+      }
+    }
+  }
+
+  return 0;
+}
 /*!
  *******************************************************************************
  * @fn      TCP_Close_Connection(void)
